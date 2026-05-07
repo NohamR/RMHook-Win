@@ -12,6 +12,10 @@
 
 #include <QtCore/QUrl>
 #include <QtCore/QString>
+#include <QtCore/QFile>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
+#include <QtCore/QJsonValue>
 
 
 static std::string GetLogPath()
@@ -43,6 +47,78 @@ static void Log(const std::string& msg)
     {
         file << msg << std::endl;
     }
+}
+
+// ------------------------------------------------------------
+// Configuration
+// ------------------------------------------------------------
+
+static std::string gConfiguredHost = "example.com";
+static int gConfiguredPort = 443;
+
+static void LoadConfig()
+{
+    char localAppData[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, localAppData)))
+    {
+        std::filesystem::path configPath = std::filesystem::path(localAppData) / "RMHook" / "config.json";
+        QString qConfigPath = QString::fromStdString(configPath.string());
+        
+        QFile file(qConfigPath);
+        if (file.exists() && file.open(QIODevice::ReadOnly))
+        {
+            QByteArray data = file.readAll();
+            file.close();
+
+            QJsonDocument doc = QJsonDocument::fromJson(data);
+            if (!doc.isNull() && doc.isObject())
+            {
+                QJsonObject obj = doc.object();
+                if (obj.contains("host")) gConfiguredHost = obj["host"].toString().toStdString();
+                if (obj.contains("port")) gConfiguredPort = obj["port"].toInt();
+                return;
+            }
+        }
+
+        // If we reach here, no config exists or it failed to load.
+        MessageBoxA(NULL, "First launch detected.\nUsing default config (example.com:443).\nYou can edit configuration in %LOCALAPPDATA%\\RMHook\\config.json", "RMHook Configuration", MB_OK | MB_ICONINFORMATION);
+
+        // Save defaults as JSON
+        std::filesystem::create_directories(configPath.parent_path());
+        if (file.open(QIODevice::WriteOnly))
+        {
+            QJsonObject obj;
+            obj["host"] = QString::fromStdString(gConfiguredHost);
+            obj["port"] = gConfiguredPort;
+
+            QJsonDocument doc(obj);
+            file.write(doc.toJson());
+            file.close();
+        }
+    }
+}
+
+static inline bool shouldPatchURL(const QString& host) {
+    if (host.isEmpty()) {
+        return false;
+    }
+
+    return QString(R"""(
+        hwr-production-dot-remarkable-production.appspot.com
+        service-manager-production-dot-remarkable-production.appspot.com
+        local.appspot.com
+        my.remarkable.com
+        ping.remarkable.com
+        internal.cloud.remarkable.com
+        eu.tectonic.remarkable.com
+        backtrace-proxy.cloud.remarkable.engineering
+        dev.ping.remarkable.com
+        dev.tectonic.remarkable.com
+        dev.internal.cloud.remarkable.com
+        eu.internal.tctn.cloud.remarkable.com
+        webapp-prod.cloud.remarkable.engineering
+    )""")
+        .contains(host, Qt::CaseInsensitive);
 }
 
 // ------------------------------------------------------------
@@ -79,16 +155,26 @@ QNetworkReply* __fastcall hookedCreateRequest(
     QIODevice* outgoingData
 )
 {
-    QString host = req.url().host();
+    const QString host = req.url().host();
+    if (shouldPatchURL(host)) {
+        QNetworkRequest newReq(req);
+        QUrl newUrl = req.url();
+        newUrl.setHost(QString::fromStdString(gConfiguredHost));
+        newUrl.setPort(gConfiguredPort);
+        newReq.setUrl(newUrl);
 
-    Log("[HTTP] " + host.toStdString());
+        Log("[HTTP PATCHED] " + host.toStdString() + " -> " + newUrl.toString().toStdString());
 
-    return originalCreateRequest(
-        self,
-        op,
-        req,
-        outgoingData
-    );
+        if (originalCreateRequest) {
+            return originalCreateRequest(self, op, newReq, outgoingData);
+        }
+        return nullptr;
+    }
+
+    if (originalCreateRequest) {
+        return originalCreateRequest(self, op, req, outgoingData);
+    }
+    return nullptr;
 }
 
 // ------------------------------------------------------------
@@ -100,14 +186,26 @@ void __fastcall hookedWebSocketOpen(
     const QNetworkRequest& req
 )
 {
-    QString host = req.url().host();
+    if (!originalWebSocketOpen) {
+        return;
+    }
 
-    Log("[WS] " + host.toStdString());
+    const QString host = req.url().host();
+    if (shouldPatchURL(host)) {
+        QUrl newUrl = req.url();
+        newUrl.setHost(QString::fromStdString(gConfiguredHost));
+        newUrl.setPort(gConfiguredPort);
 
-    originalWebSocketOpen(
-        self,
-        req
-    );
+        QNetworkRequest newReq(req);
+        newReq.setUrl(newUrl);
+
+        Log("[WS PATCHED] " + host.toStdString() + " -> " + newUrl.toString().toStdString());
+
+        originalWebSocketOpen(self, newReq);
+        return;
+    }
+
+    originalWebSocketOpen(self, req);
 }
 
 // ------------------------------------------------------------
@@ -133,6 +231,8 @@ void* ResolveExport(HMODULE module, const char* symbol)
 
 void InstallHooks()
 {
+    LoadConfig();
+
     // std::string logPath = GetLogPath();
     // std::string message = "Proxy Hook Started.\nLog file: " + logPath;
     // MessageBoxA(NULL, message.c_str(), "reMarkable Proxy", MB_OK | MB_ICONINFORMATION);
