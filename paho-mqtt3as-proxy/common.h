@@ -1,6 +1,8 @@
 #pragma once
 #include <windows.h>
 
+#include "MinHook.h"
+
 struct paho_mqtt3as_dll {
 	HMODULE dll;
 	FARPROC OrignalMQTTAsync_connect;
@@ -57,3 +59,5 @@ struct paho_mqtt3as_dll {
 
 extern paho_mqtt3as_dll paho_mqtt3as;
 extern "C" FARPROC PA;
+
+void InstallHooks();

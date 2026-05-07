@@ -67,8 +67,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	{
 		DisableThreadLibraryCalls(hModule);
         
-        MH_Initialize();
-
 		paho_mqtt3as.dll = LoadLibrary("paho-mqtt3as_orig.dll");
 		if (paho_mqtt3as.dll == NULL)
 		{
