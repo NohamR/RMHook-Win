@@ -21,8 +21,8 @@ $OrigName     = "paho-mqtt3as_orig.dll"
 $TargetPath   = Join-Path $InstallDir $TargetName
 $OrigPath     = Join-Path $InstallDir $OrigName
 
-$DefaultDebug   = "C:\Users\noham\Documents\paho-mqtt3as-proxy\x64\Debug\paho-mqtt3as-proxy.dll"
-$DefaultRelease = "C:\Users\noham\Documents\paho-mqtt3as-proxy\x64\Release\paho-mqtt3as-proxy.dll"
+$DefaultDebug   = "C:\Users\noham\Documents\paho-mqtt3as-proxy\x64\Debug\paho-mqtt3as.dll"
+$DefaultRelease = "C:\Users\noham\Documents\paho-mqtt3as-proxy\x64\Release\paho-mqtt3as.dll"
 
 function Show-Help {
     "Actions:"
