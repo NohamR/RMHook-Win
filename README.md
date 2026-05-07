@@ -95,11 +95,12 @@ If the config file does not exist, it will be created automatically with default
 ## Credits
 
 - MinHook: [TsudaKageyu/minhook](https://github.com/TsudaKageyu/minhook) - API hooking framework used by the project
-rmfakecloud: [ddvk/rmfakecloud](https://github.com/ddvk/rmfakecloud) - Self-hosted reMarkable cloud
+- rmfakecloud: [ddvk/rmfakecloud](https://github.com/ddvk/rmfakecloud) - Self-hosted reMarkable cloud
 - xovi-rmfakecloud: [asivery/xovi-rmfakecloud](https://github.com/asivery/xovi-rmfakecloud) - Original hooking information
 - rm-xovi-extensions: [asivery/rm-xovi-extensions](https://github.com/asivery/rm-xovi-extensions) - Extension framework for reMarkable, used as reference for hooking Qt functions
   - [qt-resource-rebuilder](https://github.com/asivery/rm-xovi-extensions/tree/master/qt-resource-rebuilder)
   - [xovi-message-broker](https://github.com/asivery/rm-xovi-extensions/tree/master/xovi-message-broker)
+- dll-proxy-generator: [maluramichael/dll-proxy-generator](https://github.com/maluramichael/dll-proxy-generator) - Used to generate the initial proxy DLL code
 
 ## License
 
