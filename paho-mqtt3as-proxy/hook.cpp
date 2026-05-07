@@ -142,69 +142,55 @@ QNetworkReply* __fastcall hookedCreateRequest(
 	QNetworkAccessManager* self,
 	QNetworkAccessManager::Operation op,
 	const QNetworkRequest& req,
-	QIODevice* outgoingData
-)
+	QIODevice* outgoingData)
 {
-	const QString host = req.url().host();
+	const QUrl url = req.url();
+	const QString host = url.host();
+
 	if (shouldPatchURL(host)) {
 		QNetworkRequest newReq(req);
-		QUrl newUrl = req.url();
+		QUrl newUrl = url;
 		newUrl.setHost(QString::fromStdString(gConfiguredHost));
 		newUrl.setPort(gConfiguredPort);
 		newReq.setUrl(newUrl);
-
 		Log("[HTTP PATCHED] " + host.toStdString() + " -> " + newUrl.toString().toStdString());
-
-		if (originalCreateRequest) {
-			return originalCreateRequest(self, op, newReq, outgoingData);
-		}
-		return nullptr;
+		return originalCreateRequest ? originalCreateRequest(self, op, newReq, outgoingData) : nullptr;
 	}
-
-	if (originalCreateRequest) {
-		return originalCreateRequest(self, op, req, outgoingData);
-	}
-	return nullptr;
+	return originalCreateRequest ? originalCreateRequest(self, op, req, outgoingData) : nullptr;
 }
 
 void __fastcall hookedWebSocketOpen(
 	QWebSocket* self,
-	const QNetworkRequest& req
-)
+	const QNetworkRequest& req)
 {
-	if (!originalWebSocketOpen) {
-		return;
-	}
+	if (!originalWebSocketOpen) return;
 
-	const QString host = req.url().host();
+	const QUrl url = req.url();
+	const QString host = url.host();
+
 	if (shouldPatchURL(host)) {
-		QUrl newUrl = req.url();
+		QUrl newUrl = url;
 		newUrl.setHost(QString::fromStdString(gConfiguredHost));
 		newUrl.setPort(gConfiguredPort);
-
 		QNetworkRequest newReq(req);
 		newReq.setUrl(newUrl);
-
 		Log("[WS PATCHED] " + host.toStdString() + " -> " + newUrl.toString().toStdString());
-
 		originalWebSocketOpen(self, newReq);
 		return;
 	}
-
 	originalWebSocketOpen(self, req);
 }
 
 
+
 void* ResolveExport(HMODULE module, const char* symbol)
 {
+	if (!symbol) return nullptr;
 	void* addr = (void*)GetProcAddress(module, symbol);
-
 	if (!addr)
 	{
-		Log("[ERROR] Failed to resolve symbol");
-		Log(symbol);
+		Log(std::string("[ERROR] Failed to resolve symbol: ") + symbol);
 	}
-
 	return addr;
 }
 
