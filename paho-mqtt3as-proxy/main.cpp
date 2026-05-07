@@ -1,13 +1,7 @@
 #include "common.h"
 
-DWORD WINAPI DelayedHelloThread(LPVOID lpParam)
+void LoadOriginalDllFunctions()
 {
-	Sleep(10000); // 10 seconds
-	MessageBox(0, "Hello :)", "Proxy", MB_OK | MB_ICONINFORMATION);
-	return 0;
-}
-
-void LoadOriginalDllFunctions() {
 	paho_mqtt3as.OrignalMQTTAsync_connect = GetProcAddress(paho_mqtt3as.dll, "MQTTAsync_connect");
 	paho_mqtt3as.OrignalMQTTAsync_create = GetProcAddress(paho_mqtt3as.dll, "MQTTAsync_create");
 	paho_mqtt3as.OrignalMQTTAsync_createWithOptions = GetProcAddress(paho_mqtt3as.dll, "MQTTAsync_createWithOptions");
@@ -60,30 +54,33 @@ void LoadOriginalDllFunctions() {
 	paho_mqtt3as.OrignalThread_unlock_mutex = GetProcAddress(paho_mqtt3as.dll, "Thread_unlock_mutex");
 }
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
+{
 	switch (ul_reason_for_call)
 	{
-	case DLL_PROCESS_ATTACH:
-	{
-		DisableThreadLibraryCalls(hModule);
-        
-		paho_mqtt3as.dll = LoadLibrary("paho-mqtt3as_orig.dll");
-		if (paho_mqtt3as.dll == NULL)
+		case DLL_PROCESS_ATTACH:
 		{
-			MessageBox(0, "Cannot load original paho_mqtt3as.dll library", "Proxy", MB_ICONERROR);
-			ExitProcess(0);
-		}
-		
-		LoadOriginalDllFunctions();
-        InstallHooks();
+			DisableThreadLibraryCalls(hModule);
 
-		break;
+			paho_mqtt3as.dll = LoadLibrary("paho-mqtt3as_orig.dll");
+			if (paho_mqtt3as.dll == NULL)
+			{
+				MessageBox(0, "Cannot load original paho_mqtt3as.dll library", "Proxy", MB_ICONERROR);
+				ExitProcess(0);
+			}
+
+			LoadOriginalDllFunctions();
+			InstallHooks();
+
+			break;
+		}
+
+		case DLL_PROCESS_DETACH:
+		{
+			FreeLibrary(paho_mqtt3as.dll);
+			break;
+		}
 	}
-	case DLL_PROCESS_DETACH:
-	{
-		FreeLibrary(paho_mqtt3as.dll);
-	}
-	break;
-	}
+
 	return TRUE;
 }
