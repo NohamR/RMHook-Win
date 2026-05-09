@@ -21,8 +21,11 @@ $OrigName     = "paho-mqtt3as_orig.dll"
 $TargetPath   = Join-Path $InstallDir $TargetName
 $OrigPath     = Join-Path $InstallDir $OrigName
 
-$DefaultDebug   = "C:\Users\noham\Documents\paho-mqtt3as-proxy\x64\Debug\paho-mqtt3as.dll"
-$DefaultRelease = "C:\Users\noham\Documents\paho-mqtt3as-proxy\x64\Release\paho-mqtt3as.dll"
+$RepoRoot       = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$DefaultDebug   = Join-Path $RepoRoot "paho-mqtt3as-proxy\x64\Debug\paho-mqtt3as.dll"
+$DefaultRelease = Join-Path $RepoRoot "paho-mqtt3as-proxy\x64\Release\paho-mqtt3as.dll"
+$LegacyDebug    = Join-Path $RepoRoot "x64\Debug\paho-mqtt3as.dll"
+$LegacyRelease  = Join-Path $RepoRoot "x64\Release\paho-mqtt3as.dll"
 
 function Show-Help {
     "Actions:"
@@ -31,7 +34,7 @@ function Show-Help {
     ""
     "Examples:"
     "  .\install-hook.ps1 -Action install"
-    "  .\install-hook.ps1 -Action install -SourcePath `"$DefaultDebug`""
+    "  .\install-hook.ps1 -Action install -SourcePath `"$DefaultRelease`""
     "  .\install-hook.ps1 -Action restore"
 }
 
@@ -63,11 +66,17 @@ function Install-Proxy {
     $resolvedSource = $SourcePath
 
     if (-not $resolvedSource) {
-        if (Test-Path $DefaultDebug) {
+        if (Test-Path $DefaultRelease) {
+            $resolvedSource = $DefaultRelease
+        }
+        elseif (Test-Path $DefaultDebug) {
             $resolvedSource = $DefaultDebug
         }
-        elseif (Test-Path $DefaultRelease) {
-            $resolvedSource = $DefaultRelease
+        elseif (Test-Path $LegacyRelease) {
+            $resolvedSource = $LegacyRelease
+        }
+        elseif (Test-Path $LegacyDebug) {
+            $resolvedSource = $LegacyDebug
         }
         else {
             Write-Error "No source DLL supplied and none found in default Debug/Release paths."

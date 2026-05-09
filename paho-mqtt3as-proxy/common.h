@@ -58,6 +58,62 @@ struct paho_mqtt3as_dll {
 };
 
 extern paho_mqtt3as_dll paho_mqtt3as;
-extern "C" FARPROC PA;
+
+#define PAHO_FORWARDER_EXPORTS(X) \
+	X(MQTTAsync_connect) \
+	X(MQTTAsync_create) \
+	X(MQTTAsync_destroy) \
+	X(MQTTAsync_disconnect) \
+	X(MQTTAsync_free) \
+	X(MQTTAsync_freeMessage) \
+	X(MQTTAsync_getPendingTokens) \
+	X(MQTTAsync_getVersionInfo) \
+	X(MQTTAsync_global_init) \
+	X(MQTTAsync_isComplete) \
+	X(MQTTAsync_isConnected) \
+	X(MQTTAsync_malloc) \
+	X(MQTTAsync_reconnect) \
+	X(MQTTAsync_send) \
+	X(MQTTAsync_sendMessage) \
+	X(MQTTAsync_setAfterPersistenceRead) \
+	X(MQTTAsync_setBeforePersistenceWrite) \
+	X(MQTTAsync_setCallbacks) \
+	X(MQTTAsync_setConnected) \
+	X(MQTTAsync_setConnectionLostCallback) \
+	X(MQTTAsync_setDeliveryCompleteCallback) \
+	X(MQTTAsync_setDisconnected) \
+	X(MQTTAsync_setMessageArrivedCallback) \
+	X(MQTTAsync_setTraceCallback) \
+	X(MQTTAsync_setTraceLevel) \
+	X(MQTTAsync_setUpdateConnectOptions) \
+	X(MQTTAsync_strerror) \
+	X(MQTTAsync_subscribe) \
+	X(MQTTAsync_subscribeMany) \
+	X(MQTTAsync_unsubscribe) \
+	X(MQTTAsync_unsubscribeMany) \
+	X(MQTTAsync_waitForCompletion) \
+	X(MQTTProperties_add) \
+	X(MQTTProperties_copy) \
+	X(MQTTProperties_free) \
+	X(MQTTProperties_getNumericValue) \
+	X(MQTTProperties_getNumericValueAt) \
+	X(MQTTProperties_getProperty) \
+	X(MQTTProperties_getPropertyAt) \
+	X(MQTTProperties_hasProperty) \
+	X(MQTTProperties_propertyCount) \
+	X(MQTTPropertyName) \
+	X(MQTTProperty_getType) \
+	X(MQTTReasonCode_toString) \
+	X(Thread_create_mutex) \
+	X(Thread_getid) \
+	X(Thread_lock_mutex) \
+	X(Thread_start) \
+	X(Thread_unlock_mutex)
+
+extern "C" {
+#define DECLARE_FORWARDER_TARGET(name) extern FARPROC Original_##name;
+	PAHO_FORWARDER_EXPORTS(DECLARE_FORWARDER_TARGET)
+#undef DECLARE_FORWARDER_TARGET
+}
 
 void InstallHooks();

@@ -1,8 +1,17 @@
 #include <windows.h>
 #include <fstream>
-#include "MinHook.h"
+#include <iterator>
 #include <shlobj.h>
 #include <filesystem>
+#include <algorithm>
+#include <cctype>
+#include <cstring>
+#include <cstdlib>
+#include <string>
+#include <system_error>
+
+#include "MinHook.h"
+#include "common.h"
 
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkRequest>
@@ -12,12 +21,9 @@
 
 #include <QtCore/QUrl>
 #include <QtCore/QString>
-#include <QtCore/QFile>
-#include <QtCore/QJsonDocument>
-#include <QtCore/QJsonObject>
-#include <QtCore/QJsonValue>
+#include <QtCore/QByteArray>
 
-static std::string GetLogPath()
+static bool GetLocalAppDataPath(std::filesystem::path& path)
 {
 	char localAppData[MAX_PATH];
 	if (SUCCEEDED(SHGetFolderPathA(
@@ -27,8 +33,18 @@ static std::string GetLogPath()
 			0,
 			localAppData)))
 	{
-		std::filesystem::path dir =
-			std::filesystem::path(localAppData) / "RMHook";
+		path = localAppData;
+		return true;
+	}
+	return false;
+}
+
+static std::string GetLogPath()
+{
+	std::filesystem::path localAppData;
+	if (GetLocalAppDataPath(localAppData))
+	{
+		std::filesystem::path dir = localAppData / "RMHook";
 		std::filesystem::create_directories(dir);
 		return (dir / "rmhook.log").string();
 	}
@@ -45,94 +61,325 @@ static void Log(const std::string& msg)
 	}
 }
 
+static std::string SafeCString(const char* value)
+{
+	return value ? std::string(value) : std::string("(null)");
+}
 
-static std::string gConfiguredHost = "example.com";
+static std::string QStringToUtf8String(const QString& value)
+{
+	const QByteArray utf8 = value.toUtf8();
+	if (utf8.isEmpty())
+	{
+		return {};
+	}
+	return std::string(utf8.constData(), static_cast<size_t>(utf8.size()));
+}
 
-static int gConfiguredPort = 443;
+static QString QStringFromUtf8String(const std::string& value)
+{
+	return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
+}
+
+static void LogHttpRequest(const char* prefix, const QUrl& url, QNetworkAccessManager::Operation op)
+{
+	std::string message(prefix);
+	message += QStringToUtf8String(url.toString());
+	message += " (Method: ";
+	message += std::to_string(static_cast<int>(op));
+	message += ")";
+	Log(message);
+}
+
+static void LogUrlPatch(const char* prefix, const QString& originalHost, int port, const QUrl& newUrl)
+{
+	std::string message(prefix);
+	message += QStringToUtf8String(originalHost);
+	message += ":";
+	message += std::to_string(port);
+	message += " -> ";
+	message += QStringToUtf8String(newUrl.toString());
+	Log(message);
+}
+
+
+static constexpr const char* kDefaultHost = "example.com";
+static constexpr int kDefaultPort = 443;
+
+static std::string gConfiguredHost = kDefaultHost;
+static int gConfiguredPort = kDefaultPort;
+
+static size_t SkipJsonWhitespace(const std::string& text, size_t pos)
+{
+	while (pos < text.size() && std::isspace(static_cast<unsigned char>(text[pos])))
+	{
+		++pos;
+	}
+	return pos;
+}
+
+static bool FindJsonValueStart(const std::string& text, const char* key, size_t& valueStart)
+{
+	const std::string quotedKey = std::string("\"") + key + "\"";
+	size_t keyPos = text.find(quotedKey);
+	if (keyPos == std::string::npos)
+	{
+		return false;
+	}
+
+	size_t colonPos = text.find(':', keyPos + quotedKey.size());
+	if (colonPos == std::string::npos)
+	{
+		return false;
+	}
+
+	valueStart = SkipJsonWhitespace(text, colonPos + 1);
+	return valueStart < text.size();
+}
+
+static bool ReadJsonStringValue(const std::string& text, const char* key, std::string& value)
+{
+	size_t pos = 0;
+	if (!FindJsonValueStart(text, key, pos) || text[pos] != '"')
+	{
+		return false;
+	}
+
+	++pos;
+	std::string parsed;
+	while (pos < text.size())
+	{
+		char ch = text[pos++];
+		if (ch == '"')
+		{
+			value = parsed;
+			return true;
+		}
+
+		if (ch == '\\' && pos < text.size())
+		{
+			char escaped = text[pos++];
+			switch (escaped)
+			{
+				case '"':
+				case '\\':
+				case '/':
+					parsed.push_back(escaped);
+					break;
+				case 'b':
+					parsed.push_back('\b');
+					break;
+				case 'f':
+					parsed.push_back('\f');
+					break;
+				case 'n':
+					parsed.push_back('\n');
+					break;
+				case 'r':
+					parsed.push_back('\r');
+					break;
+				case 't':
+					parsed.push_back('\t');
+					break;
+				default:
+					parsed.push_back(escaped);
+					break;
+			}
+		}
+		else
+		{
+			parsed.push_back(ch);
+		}
+	}
+
+	return false;
+}
+
+static bool ReadJsonIntValue(const std::string& text, const char* key, int& value)
+{
+	size_t pos = 0;
+	if (!FindJsonValueStart(text, key, pos))
+	{
+		return false;
+	}
+
+	char* end = nullptr;
+	long parsed = std::strtol(text.c_str() + pos, &end, 10);
+	if (end == text.c_str() + pos)
+	{
+		return false;
+	}
+
+	value = static_cast<int>(parsed);
+	return true;
+}
+
+static std::string JsonEscapeString(const std::string& value)
+{
+	std::string escaped;
+	escaped.reserve(value.size());
+	for (char ch : value)
+	{
+		switch (ch)
+		{
+			case '"':
+				escaped += "\\\"";
+				break;
+			case '\\':
+				escaped += "\\\\";
+				break;
+			case '\b':
+				escaped += "\\b";
+				break;
+			case '\f':
+				escaped += "\\f";
+				break;
+			case '\n':
+				escaped += "\\n";
+				break;
+			case '\r':
+				escaped += "\\r";
+				break;
+			case '\t':
+				escaped += "\\t";
+				break;
+			default:
+				escaped.push_back(ch);
+				break;
+		}
+	}
+	return escaped;
+}
 
 static void LoadConfig()
 {
-	char localAppData[MAX_PATH];
-	if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, localAppData)))
+	std::filesystem::path localAppData;
+	if (!GetLocalAppDataPath(localAppData))
 	{
-		std::filesystem::path configPath = std::filesystem::path(localAppData) / "RMHook" / "config.json";
-		QString qConfigPath = QString::fromStdString(configPath.string());
+		Log("[ERROR] Failed to resolve LOCALAPPDATA for config");
+		return;
+	}
 
-		QFile file(qConfigPath);
-		if (file.exists() && file.open(QIODevice::ReadOnly))
+	std::filesystem::path configPath = localAppData / "RMHook" / "config.json";
+	Log("[*] Config path: " + configPath.string());
+
+	std::error_code ec;
+	if (std::filesystem::exists(configPath, ec))
+	{
+		std::ifstream file(configPath, std::ios::binary);
+		if (!file.is_open())
 		{
-			QByteArray data = file.readAll();
-			file.close();
+			Log("[ERROR] Failed to open config for reading: " + configPath.string());
+		}
+		else
+		{
+			const std::string data(
+				(std::istreambuf_iterator<char>(file)),
+				std::istreambuf_iterator<char>());
 
-			QJsonDocument doc = QJsonDocument::fromJson(data);
-			if (!doc.isNull() && doc.isObject())
+			std::string host;
+			int port = 0;
+			bool readAnySetting = false;
+			if (ReadJsonStringValue(data, "host", host) && !host.empty())
 			{
-				QJsonObject obj = doc.object();
-				if (obj.contains("host"))
-				{
-					gConfiguredHost = obj["host"].toString().toStdString();
-				}
-				if (obj.contains("port"))
-				{
-					gConfiguredPort = obj["port"].toInt();
-				}
+				gConfiguredHost = host;
+				readAnySetting = true;
+			}
+			if (ReadJsonIntValue(data, "port", port) && port > 0 && port <= 65535)
+			{
+				gConfiguredPort = port;
+				readAnySetting = true;
+			}
+			if (readAnySetting)
+			{
 				Log("[*] Loaded config: host=" + gConfiguredHost + ", port=" + std::to_string(gConfiguredPort));
 				return;
 			}
-		}
 
-		MessageBoxA(NULL, "First launch detected.\nUsing default config (example.com:443).\nYou can edit configuration in %LOCALAPPDATA%\\RMHook\\config.json", "RMHook Configuration", MB_OK | MB_ICONINFORMATION);
-
-		std::filesystem::create_directories(configPath.parent_path());
-		if (file.open(QIODevice::WriteOnly))
-		{
-			QJsonObject obj;
-			obj["host"] = QString::fromStdString(gConfiguredHost);
-			obj["port"] = gConfiguredPort;
-
-			QJsonDocument doc(obj);
-			file.write(doc.toJson());
-			file.close();
+			Log("[ERROR] Config exists but no valid host or port was found");
 		}
 	}
+	else if (ec)
+	{
+		Log("[ERROR] Failed to check config existence: " + ec.message());
+	}
+
+	MessageBoxA(NULL, "First launch detected.\nUsing default config (example.com:443).\nYou can edit configuration in %LOCALAPPDATA%\\RMHook\\config.json", "RMHook Configuration", MB_OK | MB_ICONINFORMATION);
+
+	std::filesystem::create_directories(configPath.parent_path(), ec);
+	if (ec)
+	{
+		Log("[ERROR] Failed to create config directory: " + ec.message());
+		return;
+	}
+
+	const std::string json =
+		"{\n"
+		"    \"host\": \"" + JsonEscapeString(gConfiguredHost) + "\",\n"
+		"    \"port\": " + std::to_string(gConfiguredPort) + "\n"
+		"}\n";
+	std::ofstream file(configPath, std::ios::binary | std::ios::trunc);
+	if (!file.is_open())
+	{
+		Log("[ERROR] Failed to open config for writing: " + configPath.string());
+		return;
+	}
+
+	file.write(json.data(), static_cast<std::streamsize>(json.size()));
+	file.close();
+	Log("[*] Created default config: " + configPath.string());
 }
 
-static inline bool shouldPatchURL(const QString& host)
+static bool ShouldPatchHost(const QString& host)
 {
 	if (host.isEmpty())
 	{
 		return false;
 	}
 
-	return QString(R"""(
-		hwr-production-dot-remarkable-production.appspot.com
-		service-manager-production-dot-remarkable-production.appspot.com
-		local.appspot.com
-		my.remarkable.com
-		ping.remarkable.com
-		internal.cloud.remarkable.com
-		eu.tectonic.remarkable.com
-		backtrace-proxy.cloud.remarkable.engineering
-		dev.ping.remarkable.com
-		dev.tectonic.remarkable.com
-		dev.internal.cloud.remarkable.com
-		eu.internal.tctn.cloud.remarkable.com
-		webapp-prod.cloud.remarkable.engineering
-		vernemq-prod.cloud.remarkable.engineering
-		vernemq-dev.cloud.remarkable.engineering
-	)""")
-		.contains(host, Qt::CaseInsensitive);
+	static constexpr const char* kPatchHosts[] = {
+		"hwr-production-dot-remarkable-production.appspot.com",
+		"service-manager-production-dot-remarkable-production.appspot.com",
+		"local.appspot.com",
+		"my.remarkable.com",
+		"ping.remarkable.com",
+		"internal.cloud.remarkable.com",
+		"eu.tectonic.remarkable.com",
+		"backtrace-proxy.cloud.remarkable.engineering",
+		"dev.ping.remarkable.com",
+		"dev.tectonic.remarkable.com",
+		"dev.internal.cloud.remarkable.com",
+		"eu.internal.tctn.cloud.remarkable.com",
+		"webapp-prod.cloud.remarkable.engineering",
+		"vernemq-prod.cloud.remarkable.engineering",
+		"vernemq-dev.cloud.remarkable.engineering",
+	};
+
+	for (const char* patchHost : kPatchHosts)
+	{
+		if (host.compare(QString::fromLatin1(patchHost), Qt::CaseInsensitive) == 0)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+static void ApplyConfiguredEndpoint(QUrl& url)
+{
+	url.setHost(QStringFromUtf8String(gConfiguredHost));
+	url.setPort(gConfiguredPort);
 }
 
 
-typedef QNetworkReply* (__fastcall* QNAM_CreateRequest_t)(
+using QNAM_CreateRequest_t = QNetworkReply* (__fastcall*)(
 	QNetworkAccessManager* self,
 	QNetworkAccessManager::Operation op,
 	const QNetworkRequest& req,
 	QIODevice* outgoingData
 );
 
-typedef void (__fastcall* QWebSocket_Open_t)(
+using QWebSocket_Open_t = void (__fastcall*)(
 	QWebSocket* self,
 	const QNetworkRequest& req
 );
@@ -140,7 +387,7 @@ typedef void (__fastcall* QWebSocket_Open_t)(
 static QNAM_CreateRequest_t originalCreateRequest = nullptr;
 static QWebSocket_Open_t originalWebSocketOpen = nullptr;
 
-QNetworkReply* __fastcall hookedCreateRequest(
+static QNetworkReply* __fastcall hookedCreateRequest(
 	QNetworkAccessManager* self,
 	QNetworkAccessManager::Operation op,
 	const QNetworkRequest& req,
@@ -150,49 +397,54 @@ QNetworkReply* __fastcall hookedCreateRequest(
 	const QUrl url = req.url();
 	const QString host = url.host();
 
-	Log("[HTTP] Request to: " + url.toString().toStdString() + " (Method: " + std::to_string((int)op) + ")");
+	LogHttpRequest("[HTTP] Request to: ", url, op);
 
-	if (shouldPatchURL(host)) {
+	if (ShouldPatchHost(host))
+	{
 		QNetworkRequest newReq(req);
 		QUrl newUrl = url;
-		newUrl.setHost(QString::fromStdString(gConfiguredHost));
-		newUrl.setPort(gConfiguredPort);
+		ApplyConfiguredEndpoint(newUrl);
 		newReq.setUrl(newUrl);
-		Log("[HTTP PATCHED] " + host.toStdString() + ":" + std::to_string(gConfiguredPort) + " -> " + newUrl.toString().toStdString());
-		if (originalCreateRequest) {
+		LogUrlPatch("[HTTP PATCHED] ", host, gConfiguredPort, newUrl);
+		if (originalCreateRequest)
+		{
 			return originalCreateRequest(self, op, newReq, outgoingData);
 		}
 		return nullptr;
 	}
 	
-	if (originalCreateRequest) {
-			return originalCreateRequest(self, op, req, outgoingData);
+	if (originalCreateRequest)
+	{
+		return originalCreateRequest(self, op, req, outgoingData);
 	}
 	return nullptr;
 }
 
 
-void __fastcall hookedWebSocketOpen(
+static void __fastcall hookedWebSocketOpen(
 	QWebSocket* self,
 	const QNetworkRequest& req)
 {
 	Log("[*] Intercepted QWebSocket::open");
-	if (!originalWebSocketOpen) {
+	if (!originalWebSocketOpen)
+	{
 		return;
 	}
 
 	const QUrl url = req.url();
 	const QString host = url.host();
 
-	Log("[WS] Opening: " + url.toString().toStdString());
+	std::string openMessage("[WS] Opening: ");
+	openMessage += QStringToUtf8String(url.toString());
+	Log(openMessage);
 
-	if (shouldPatchURL(host)) {
+	if (ShouldPatchHost(host))
+	{
 		QUrl newUrl = url;
-		newUrl.setHost(QString::fromStdString(gConfiguredHost));
-		newUrl.setPort(gConfiguredPort);
+		ApplyConfiguredEndpoint(newUrl);
 		QNetworkRequest newReq(req);
 		newReq.setUrl(newUrl);
-		Log("[WS PATCHED] " + host.toStdString() + ":" + std::to_string(gConfiguredPort) + " -> " + newUrl.toString().toStdString());
+		LogUrlPatch("[WS PATCHED] ", host, gConfiguredPort, newUrl);
 		originalWebSocketOpen(self, newReq);
 		return;
 	}
@@ -200,87 +452,107 @@ void __fastcall hookedWebSocketOpen(
 }
 
 
-typedef int(__cdecl* MQTTAsync_createWithOptions_t)(
-    void**      handle,
-    const char* serverURI,
-    const char* clientId,
-    int         persistence_type,
-    void*       persistence_context,
-    void*       options
+using MQTTAsync_createWithOptions_t = int (__cdecl*)(
+	void** handle,
+	const char* serverURI,
+	const char* clientId,
+	int persistence_type,
+	void* persistence_context,
+	void* options
 );
-static MQTTAsync_createWithOptions_t originalMQTTAsyncCreate = nullptr;
-
-// typedef void* (__fastcall* async_client_ctor_t)(void* self, void* serverURI, void* clientId, void* persistence);
-// static async_client_ctor_t originalAsyncClientCtor = nullptr;
-
-// void* __fastcall hookedAsyncClientCtor(void* self, void* serverURI, void* clientId, void* persistence)
-// {
-//     Log("[MQTT] Intercepted mqtt::async_client constructor");
-//     return self;
-// }
 
 // Patch a paho URI: "ssl://host.remarkable.com:port" -> "ssl://proxy:port"
 // Returns patched string, or empty if no patch needed.
 static std::string PatchMqttUri(const char* uri)
 {
-    if (!uri) return {};
-    const std::string original(uri);
+	if (!uri)
+	{
+		return {};
+	}
 
-    size_t schemeEnd = original.find("://");
-    size_t hostStart = (schemeEnd != std::string::npos) ? schemeEnd + 3 : 0;
-    size_t hostEnd   = original.find_first_of(":/", hostStart);
-    if (hostEnd == std::string::npos) hostEnd = original.size();
+	const std::string original(uri);
+	const size_t schemeEnd = original.find("://");
+	const size_t hostStart = (schemeEnd != std::string::npos) ? schemeEnd + 3 : 0;
+	size_t hostEnd = original.find_first_of(":/", hostStart);
+	if (hostEnd == std::string::npos)
+	{
+		hostEnd = original.size();
+	}
 
-    const std::string origHost = original.substr(hostStart, hostEnd - hostStart);
+	const std::string origHost = original.substr(hostStart, hostEnd - hostStart);
+	std::string hostLower = origHost;
+	std::transform(hostLower.begin(), hostLower.end(), hostLower.begin(),
+		[](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
 
-    // Match any *.remarkable.com or *.remarkable.engineering host
-    static const char* kSuffixes[] = {
-        ".remarkable.com",
-        ".remarkable.engineering",
-        nullptr
-    };
-    bool shouldPatch = false;
-    for (int i = 0; kSuffixes[i]; ++i)
-    {
-        const std::string suffix(kSuffixes[i]);
-        if (origHost.size() >= suffix.size() &&
-            origHost.compare(origHost.size() - suffix.size(),
-                             suffix.size(), suffix) == 0)
-        {
-            shouldPatch = true;
-            break;
-        }
-    }
-    if (!shouldPatch) return {};
+	static constexpr const char* kSuffixes[] = {
+		".remarkable.com",
+		".remarkable.engineering",
+	};
 
-    std::string patched = original;
-    patched.replace(hostStart, hostEnd - hostStart, gConfiguredHost);
+	bool shouldPatch = false;
+	for (const char* suffix : kSuffixes)
+	{
+		const size_t suffixLength = std::strlen(suffix);
+		if (hostLower.size() >= suffixLength &&
+			hostLower.compare(hostLower.size() - suffixLength, suffixLength, suffix) == 0)
+		{
+			shouldPatch = true;
+			break;
+		}
+	}
+	if (!shouldPatch)
+	{
+		return {};
+	}
 
-    // Fix port
-    size_t colonPos = patched.find(':', hostStart + gConfiguredHost.size());
-    if (colonPos != std::string::npos)
-    {
-        size_t numEnd = patched.find_first_not_of("0123456789", colonPos + 1);
-        if (numEnd == std::string::npos) numEnd = patched.size();
-        patched.replace(colonPos + 1, numEnd - colonPos - 1,
-                        std::to_string(gConfiguredPort));
-    }
-    return patched;
+	std::string patched = original;
+	patched.replace(hostStart, hostEnd - hostStart, gConfiguredHost);
+
+	const std::string configuredPort = std::to_string(gConfiguredPort);
+	const size_t hostAfter = hostStart + gConfiguredHost.size();
+	if (hostAfter < patched.size() && patched[hostAfter] == ':')
+	{
+		const size_t colonPos = hostAfter;
+		size_t numEnd = patched.find_first_not_of("0123456789", colonPos + 1);
+		if (numEnd == std::string::npos)
+		{
+			numEnd = patched.size();
+		}
+		patched.replace(colonPos + 1, numEnd - colonPos - 1, configuredPort);
+	}
+	else
+	{
+		patched.insert(hostAfter, ":" + configuredPort);
+	}
+	return patched;
 }
 
-int __cdecl hookedMQTTAsyncCreate(
-    void**      handle,
-    const char* serverURI,
-    const char* clientId,
-    int         persistence_type,
-    void*       persistence_context,
-    void*       options)
+extern "C" int __cdecl FakeMQTTAsync_createWithOptions(
+	void** handle,
+	const char* serverURI,
+	const char* clientId,
+	int persistence_type,
+	void* persistence_context,
+	void* options)
 {
-    Log("[MQTT] MQTTAsync_createWithOptions URI: " + std::string(serverURI ? serverURI : "(null)") + " ClientId: " + (clientId ? clientId : "(null)") + " PersistenceType: " + std::to_string(persistence_type));
+	std::string message("[MQTT] MQTTAsync_createWithOptions URI: ");
+	message += SafeCString(serverURI);
+	message += " ClientId: ";
+	message += SafeCString(clientId);
+	message += " PersistenceType: ";
+	message += std::to_string(persistence_type);
+	Log(message);
 
-    const char* finalUri = serverURI;
-	std::string patched;
-	patched = PatchMqttUri(serverURI);
+	auto originalMQTTAsyncCreate =
+		reinterpret_cast<MQTTAsync_createWithOptions_t>(paho_mqtt3as.OrignalMQTTAsync_createWithOptions);
+	if (!originalMQTTAsyncCreate)
+	{
+		Log("[ERROR] Original MQTTAsync_createWithOptions is not loaded");
+		return -1;
+	}
+
+	const char* finalUri = serverURI;
+	std::string patched = PatchMqttUri(serverURI);
 	if (!patched.empty())
 	{
 		finalUri = patched.c_str();
@@ -293,20 +565,25 @@ int __cdecl hookedMQTTAsyncCreate(
 		persistence_context,
 		options
 	);
-	Log("[MQTT] originalMQTTAsyncCreate returned " + std::to_string(ret) + " Final URI: " + std::string(finalUri));
+	Log("[MQTT] originalMQTTAsyncCreate returned " + std::to_string(ret) + " Final URI: " + SafeCString(finalUri));
 	return ret;
-    // return -1; // Return error to prevent actual MQTT connection attempts until we implement the full patch.
 }
 
 
 
-void* ResolveExport(HMODULE module, const char* symbol)
+static void* ResolveExport(HMODULE module, const char* symbol)
 {
-	if (!symbol) return nullptr;
+	if (!module || !symbol)
+	{
+		Log("[ERROR] ResolveExport called with null module or symbol");
+		return nullptr;
+	}
+
 	void* addr = (void*)GetProcAddress(module, symbol);
 	if (!addr)
 	{
 		Log(std::string("[ERROR] Failed to resolve symbol: ") + symbol);
+		return nullptr;
 	}
 	Log(std::string("[+] Resolved ") + symbol + " at " + std::to_string(reinterpret_cast<uintptr_t>(addr)));
 	return addr;
@@ -326,9 +603,6 @@ void InstallHooks()
 
 	HMODULE qtNetwork = nullptr;
 	HMODULE qtWebSockets = nullptr;
-	HMODULE mqttCLib = nullptr;
-	// HMODULE mqttCppLib = nullptr;
-	HMODULE mainModule = GetModuleHandleA(NULL);
 
 	while (!qtNetwork)
 	{
@@ -342,19 +616,7 @@ void InstallHooks()
 		Sleep(100);
 	}
 
-	while (!mqttCLib)
-	{
-		mqttCLib = GetModuleHandleA("paho-mqtt3as.dll");
-		Sleep(100);
-	}
-
-	// while (!mqttCppLib)
-	// {
-	// 	mqttCppLib = GetModuleHandleA("paho-mqttpp3.dll");
-	// 	Sleep(100);
-	// }
-
-	Log("[+] Qt and MQTT DLLs loaded");
+	Log("[+] Qt DLLs loaded");
 
 	void* createRequestAddr = ResolveExport(
 		qtNetwork,
@@ -366,32 +628,11 @@ void InstallHooks()
 		"?open@QWebSocket@@QEAAXAEBVQNetworkRequest@@@Z"
 	);
 
-	// void* asyncClientCtorAddr = ResolveExport(
-	// 	mqttCppLib,
-	// 	"??0async_client@mqtt@@QEAA@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@0PEAViclient_persistence@1@@Z"
-	// );
-
-	// if (MH_CreateHook(
-	// 		asyncClientCtorAddr,
-	// 		&hookedAsyncClientCtor,
-	// 		reinterpret_cast<void**>(&originalAsyncClientCtor)
-	// 	) != MH_OK)
-	// 	Log("[ERROR] Failed to hook mqtt::async_client constructor");
-	// else
-	// 	Log("[+] Hooked mqtt::async_client constructor");
-
-	void* mqttCreateAddr = ResolveExport(mqttCLib, "MQTTAsync_createWithOptions");
-
-	if (MH_CreateHook(
-			mqttCreateAddr,
-			&hookedMQTTAsyncCreate,
-			reinterpret_cast<void**>(&originalMQTTAsyncCreate)
-		) != MH_OK)
-		Log("[ERROR] Failed to hook MQTTAsync_createWithOptions");
-	else
-		Log("[+] Hooked MQTTAsync_createWithOptions");
-
-	if (MH_CreateHook(
+	if (!createRequestAddr)
+	{
+		Log("[ERROR] Skipping createRequest hook because the symbol was not resolved");
+	}
+	else if (MH_CreateHook(
 			createRequestAddr,
 			&hookedCreateRequest,
 			reinterpret_cast<void**>(&originalCreateRequest)
@@ -404,7 +645,11 @@ void InstallHooks()
 		Log("[+] Hooked createRequest");
 	}
 
-	if (MH_CreateHook(
+	if (!webSocketOpenAddr)
+	{
+		Log("[ERROR] Skipping QWebSocket::open hook because the symbol was not resolved");
+	}
+	else if (MH_CreateHook(
 			webSocketOpenAddr,
 			&hookedWebSocketOpen,
 			reinterpret_cast<void**>(&originalWebSocketOpen)

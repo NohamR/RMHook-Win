@@ -2,6 +2,10 @@
 
 void LoadOriginalDllFunctions()
 {
+#define LOAD_FORWARDER_TARGET(name) Original_##name = GetProcAddress(paho_mqtt3as.dll, #name);
+	PAHO_FORWARDER_EXPORTS(LOAD_FORWARDER_TARGET)
+#undef LOAD_FORWARDER_TARGET
+
 	paho_mqtt3as.OrignalMQTTAsync_connect = GetProcAddress(paho_mqtt3as.dll, "MQTTAsync_connect");
 	paho_mqtt3as.OrignalMQTTAsync_create = GetProcAddress(paho_mqtt3as.dll, "MQTTAsync_create");
 	paho_mqtt3as.OrignalMQTTAsync_createWithOptions = GetProcAddress(paho_mqtt3as.dll, "MQTTAsync_createWithOptions");
