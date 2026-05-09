@@ -380,16 +380,16 @@ void InstallHooks()
 	// else
 	// 	Log("[+] Hooked mqtt::async_client constructor");
 
-	// void* mqttCreateAddr = ResolveExport(mqttCLib, "MQTTAsync_createWithOptions");
+	void* mqttCreateAddr = ResolveExport(mqttCLib, "MQTTAsync_createWithOptions");
 
-	// if (MH_CreateHook(
-	// 		mqttCreateAddr,
-	// 		&hookedMQTTAsyncCreate,
-	// 		reinterpret_cast<void**>(&originalMQTTAsyncCreate)
-	// 	) != MH_OK)
-	// 	Log("[ERROR] Failed to hook MQTTAsync_createWithOptions");
-	// else
-	// 	Log("[+] Hooked MQTTAsync_createWithOptions");
+	if (MH_CreateHook(
+			mqttCreateAddr,
+			&hookedMQTTAsyncCreate,
+			reinterpret_cast<void**>(&originalMQTTAsyncCreate)
+		) != MH_OK)
+		Log("[ERROR] Failed to hook MQTTAsync_createWithOptions");
+	else
+		Log("[+] Hooked MQTTAsync_createWithOptions");
 
 	if (MH_CreateHook(
 			createRequestAddr,
