@@ -8,8 +8,9 @@ RMHook-Win intercepts the reMarkable Desktop app's Qt networking layer and patch
 
 ## Features
 
-- Redirect reMarkable cloud HTTP(s) requests to a self-hosted rmfakecloud server
-- Patch Qt WebSocket connections used by the reMarkable app
+- Network request interception and redirection
+- WebSocket connection patching
+- MQTT URI modification for screen sharing features
 
 ## Compatibility
 
