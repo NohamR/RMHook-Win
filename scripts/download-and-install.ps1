@@ -14,7 +14,7 @@ Write-Host "Downloading install script..."
 Invoke-WebRequest -Uri $ScriptUrl -OutFile $InstallScriptPath -UseBasicParsing
 
 Write-Host "Installing hook with downloaded DLL..."
-# Run the downloaded script
-& $InstallScriptPath -Action install -SourcePath $DestPath
+# Run the downloaded script, bypassing execution policies
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $InstallScriptPath -Action install -SourcePath $DestPath
 
 Write-Host "Done. You can safely close this window."
