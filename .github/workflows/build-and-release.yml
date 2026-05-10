@@ -18,7 +18,7 @@ jobs:
       uses: microsoft/setup-msbuild@v2
 
     - name: Build the proxy DLL
-      run: msbuild paho-mqtt3as-proxy.slnx /p:Configuration=Release /p:Platform=x64
+      run: msbuild paho-mqtt3as-proxy.slnx /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
