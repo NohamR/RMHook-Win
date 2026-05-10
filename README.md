@@ -28,9 +28,18 @@ RMHook-Win intercepts the reMarkable Desktop app's Qt networking layer and patch
 
 ⚠️ **For legal reasons, this repository does not include a pre-patched reMarkable app.** However, the latest compiled dylib is available in the [Releases](https://github.com/NohamR/RMHook-Win/releases/latest) section.
 
+## Auto installation
+
+Run in a PowerShell terminal with administrator privileges:
+```powershell
+irm https://raw.githubusercontent.com/NohamR/RMHook-Win/refs/heads/main/scripts/download-and-install.ps1 | iex
+```
+
+## Manual installation
+
 ### Step 1: Build or obtain the proxy DLL
 
-Build the `paho-mqtt3as-proxy` project with Visual Studio using `paho-mqtt3as-proxy.slnx`, or use an existing `paho-mqtt3as.dll` built from this repo.
+Build the `paho-mqtt3as-proxy` project with [Visual Studio](https://visualstudio.microsoft.com/downloads/) using `paho-mqtt3as-proxy.slnx`, or use an existing `paho-mqtt3as.dll` built from this repo.
 
 ### Step 2: Install the hook
 
