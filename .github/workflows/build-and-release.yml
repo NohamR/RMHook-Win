@@ -1,0 +1,47 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags
+  workflow_dispatch: # Allow manual triggering to create a draft release
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Add MSBuild to PATH
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Build the proxy DLL
+      run: msbuild paho-mqtt3as-proxy.slnx /p:Configuration=Release /p:Platform=x64
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: paho-mqtt3as-dll
+        # By default, x64 MSBuild outputs go to x64\Release\ for the solution.
+        path: x64/Release/paho-mqtt3as.dll
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Download Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: paho-mqtt3as-dll
+        path: ./release-artifacts
+        
+    - name: Create Draft Release
+      uses: softprops/action-gh-release@v2
+      with:
+        draft: true
+        files: ./release-artifacts/paho-mqtt3as.dll
+        generate_release_notes: true
