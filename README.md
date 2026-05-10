@@ -24,24 +24,22 @@ RMHook-Win intercepts the reMarkable Desktop app's Qt networking layer and patch
 
 ## Installation and usage
 
-### Important legal note
-
 ⚠️ **For legal reasons, this repository does not include a pre-patched reMarkable app.** However, the latest compiled dylib is available in the [Releases](https://github.com/NohamR/RMHook-Win/releases/latest) section.
 
-## Auto installation
+### Auto installation
 
 Run in a PowerShell terminal with administrator privileges:
 ```powershell
 irm https://raw.githubusercontent.com/NohamR/RMHook-Win/refs/heads/main/scripts/download-and-install.ps1 | iex
 ```
 
-## Manual installation
+### Manual installation
 
-### Step 1: Build or obtain the proxy DLL
+#### Step 1: Build or obtain the proxy DLL
 
 Build the `paho-mqtt3as-proxy` project with [Visual Studio](https://visualstudio.microsoft.com/downloads/) using `paho-mqtt3as-proxy.slnx`, or use an existing `paho-mqtt3as.dll` built from this repo.
 
-### Step 2: Install the hook
+#### Step 2: Install the hook
 
 Use the installer script from the `scripts` folder.
 Note: Run from an elevated PowerShell session. The installer script will request administrator privileges if needed.
@@ -66,7 +64,7 @@ The script expects the Windows reMarkable install folder at:
 C:\Program Files\reMarkable
 ```
 
-### Step 3: Restore the original DLL
+#### Step 3: Restore the original DLL
 
 To remove the proxy and restore the original `paho-mqtt3as.dll`:
 ```powershell
@@ -79,6 +77,7 @@ Config path:
 ```text
 %LOCALAPPDATA%\RMHook\config.json
 ```
+The config is loaded on app startup and changes require a restart to take effect. It specifies the host and port for redirecting reMarkable cloud traffic.
 
 Example config:
 ```json
