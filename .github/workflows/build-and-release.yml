@@ -4,7 +4,12 @@ on:
   push:
     tags:
       - 'v*' # Trigger on version tags
-  workflow_dispatch: # Allow manual triggering to create a draft release
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v1.0.1)'
+        required: true
+        type: string
 
 jobs:
   build:
@@ -42,6 +47,7 @@ jobs:
     - name: Create Draft Release
       uses: softprops/action-gh-release@v2
       with:
+        tag_name: ${{ inputs.tag || github.ref_name }}
         draft: true
         files: ./release-artifacts/paho-mqtt3as.dll
         generate_release_notes: true
