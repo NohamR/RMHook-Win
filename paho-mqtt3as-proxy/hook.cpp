@@ -51,6 +51,10 @@ static std::string GetLogPath()
 	return "rmhook.log";
 }
 
+static void ClearLog()
+{
+	std::ofstream file(GetLogPath(), std::ios::trunc);
+}
 
 static void Log(const std::string& msg)
 {
@@ -304,7 +308,7 @@ static void LoadConfig()
 		Log("[ERROR] Failed to check config existence: " + ec.message());
 	}
 
-	MessageBoxA(NULL, "First launch detected.\nUsing default config (example.com:443).\nYou can edit configuration in %LOCALAPPDATA%\\RMHook\\config.json", "RMHook Configuration", MB_OK | MB_ICONINFORMATION);
+	MessageBoxA(NULL, "First launch detected.\nUsing default config (example.com:443).\nEdit configuration in %LOCALAPPDATA%\\RMHook\\config.json\nand restart the application to apply changes.", "RMHook Configuration", MB_OK | MB_ICONINFORMATION);
 
 	std::filesystem::create_directories(configPath.parent_path(), ec);
 	if (ec)
@@ -592,6 +596,7 @@ static void* ResolveExport(HMODULE module, const char* symbol)
 void InstallHooks()
 {
 	LoadConfig();
+	ClearLog();
 
 	Log("[*] Initializing MinHook");
 

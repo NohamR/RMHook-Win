@@ -1,19 +1,19 @@
-$DllUrl = "https://github.com/NohamR/RMHook-Win/releases/download/v1.0/paho-mqtt3as.dll"
-$ScriptUrl = "https://raw.githubusercontent.com/NohamR/RMHook-Win/main/scripts/install-hook.ps1"
+$REPO = "NohamR/RMHook-Win"
+$FILE = "paho-mqtt3as.dll"
 
 $TempDir = [System.IO.Path]::GetTempPath()
-$DestPath = Join-Path $TempDir "paho-mqtt3as.dll"
+$DestPath = Join-Path $TempDir $FILE
 $InstallScriptPath = Join-Path $TempDir "install-hook.ps1"
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-Write-Host "Downloading DLL from $DllUrl to $DestPath..."
-Invoke-WebRequest -Uri $DllUrl -OutFile $DestPath -UseBasicParsing
+Write-Host "[INFO] Downloading $FILE..."
+Invoke-WebRequest -Uri "https://github.com/$REPO/releases/latest/download/$FILE" -OutFile $DestPath -UseBasicParsing
 
-Write-Host "Downloading install script..."
-Invoke-WebRequest -Uri $ScriptUrl -OutFile $InstallScriptPath -UseBasicParsing
+Write-Host "[INFO] Downloading install script..."
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/$REPO/refs/heads/main/scripts/install-hook.ps1" -OutFile $InstallScriptPath -UseBasicParsing
 
-Write-Host "Installing hook with downloaded DLL..."
+Write-Host "[INFO] Running install script..."
 # Run the downloaded script, bypassing execution policies
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $InstallScriptPath -Action install -SourcePath $DestPath
 
