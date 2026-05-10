@@ -101,6 +101,9 @@ If the config file does not exist, it will be created automatically with default
 - Check the config file for valid JSON
 - Make sure the `host` and `port` values point to a reachable rmfakecloud server
 
+## How it works
+The project builds a proxy DLL for `paho-mqtt3as.dll` that re-exports all original functions. It hooks specific Qt network functions (`QNetworkAccessManager::createRequest`, `QWebSocket::open` and `MQTTAsync_createWithOptions`) to intercept and modify outgoing requests from the reMarkable Desktop app. The hooks redirect traffic to the configured host and port, allowing the app to communicate with a self-hosted rmfakecloud server instead of the official reMarkable cloud.
+
 ## Credits
 
 - MinHook: [TsudaKageyu/minhook](https://github.com/TsudaKageyu/minhook) - API hooking framework used by the project
