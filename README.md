@@ -72,6 +72,7 @@ To remove the proxy and restore the original `paho-mqtt3as.dll`:
 ```
 
 ## Configuration
+When you pair the app the first time, the in-app browser will open `my.remarkable.com` to fetch a one-time pairing code, close the browser and enter the code from `rmfakecloud` direclty into the app prompt.
 
 Config path:
 ```text
