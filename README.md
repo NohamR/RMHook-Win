@@ -15,11 +15,11 @@ RMHook-Win intercepts the reMarkable Desktop app's Qt networking layer and patch
 ## Compatibility
 
 **Tested and working on:**
-- reMarkable Desktop v3.27.1 (released 2026-06-05)
+- reMarkable Desktop v3.27.3 (released 2026-08-20)
 
 <p align="center">
-  <img src="docs/latest.png" width="40%" />
-  <img src="docs/rm.png" width="50%" />
+  <img src="docs/latest.png" width="45%" />
+  <img src="docs/rm.png" width="45%" />
 </p>
 
 ## Installation and usage
