@@ -6,6 +6,12 @@ A Windows port of [RMHook](https://github.com/NohamR/RMHook) for the reMarkable 
 
 RMHook-Win intercepts the reMarkable Desktop app's Qt networking layer and patches outgoing requests to the configured host and port. It is designed for the Windows reMarkable Desktop client and uses a DLL proxy for `paho-mqtt3as.dll`.
 
+## Other platforms
+
+- **[RMHook](https://github.com/NohamR/RMHook)**: macOS Desktop
+- **[RMHook-iOS](https://github.com/NohamR/RMHook-iOS)**: iOS
+- **[RMHook-Android](https://github.com/NohamR/RMHook-Android)**: Android
+
 ## Features
 
 - Network request interception and redirection
@@ -24,7 +30,7 @@ RMHook-Win intercepts the reMarkable Desktop app's Qt networking layer and patch
 
 ## Installation and usage
 
-⚠️ **For legal reasons, this repository does not include a pre-patched reMarkable app.** However, the latest compiled dylib is available in the [Releases](https://github.com/NohamR/RMHook-Win/releases/latest) section.
+⚠️ **For legal reasons, this repository does not include a pre-patched reMarkable app.** However, the latest compiled DLL is available in the [Releases](https://github.com/NohamR/RMHook-Win/releases/latest) section.
 
 ### Auto installation
 
@@ -72,12 +78,14 @@ To remove the proxy and restore the original `paho-mqtt3as.dll`:
 ```
 
 ## Configuration
-When you pair the app the first time, the in-app browser will open `my.remarkable.com` to fetch a one-time pairing code, close the browser and enter the code from `rmfakecloud` direclty into the app prompt.
+
+When you pair the app the first time, the in-app browser will open `my.remarkable.com` to fetch a one-time pairing code, close the browser and enter the code from `rmfakecloud` directly into the app prompt.
 
 Config path:
 ```text
 %LOCALAPPDATA%\RMHook\config.json
 ```
+
 The config is loaded on app startup and changes require a restart to take effect. It specifies the host and port for redirecting reMarkable cloud traffic.
 
 Example config:
@@ -90,6 +98,10 @@ Example config:
 
 If the config file does not exist, it will be created automatically with default values on first launch.
 
+## How it works
+
+The project builds a proxy DLL for `paho-mqtt3as.dll` that re-exports all original functions. It hooks specific Qt network functions (`QNetworkAccessManager::createRequest`, `QWebSocket::open` and `MQTTAsync_createWithOptions`) to intercept and modify outgoing requests from the reMarkable Desktop app. The hooks redirect traffic to the configured host and port, allowing the app to communicate with a self-hosted rmfakecloud server instead of the official reMarkable cloud.
+
 ## Troubleshooting
 
 ### Hook install fails
@@ -101,9 +113,6 @@ If the config file does not exist, it will be created automatically with default
 - Restore the original DLL with `-Action restore`
 - Check the config file for valid JSON
 - Make sure the `host` and `port` values point to a reachable rmfakecloud server
-
-## How it works
-The project builds a proxy DLL for `paho-mqtt3as.dll` that re-exports all original functions. It hooks specific Qt network functions (`QNetworkAccessManager::createRequest`, `QWebSocket::open` and `MQTTAsync_createWithOptions`) to intercept and modify outgoing requests from the reMarkable Desktop app. The hooks redirect traffic to the configured host and port, allowing the app to communicate with a self-hosted rmfakecloud server instead of the official reMarkable cloud.
 
 ## Credits
 
